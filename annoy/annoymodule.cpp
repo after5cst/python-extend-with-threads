@@ -4,8 +4,11 @@
 #include <atomic>
 #include <iostream>
 #include <sstream>
+#include <stdlib.h>
 #include <thread>
 #include <vector>
+
+#define PRINT_DEBUG_MESSAGES
 
 namespace {
 
@@ -15,21 +18,38 @@ namespace {
 
     typedef std::shared_ptr<thread_parms> thread_parms_ptr;
     typedef std::pair<std::thread, thread_parms_ptr> thread_data;
-    std::vector<thread_data> *threads;
+    std::vector<thread_data> threads;
+}
+
+void destroy_globals()
+{
+#ifdef PRINT_DEBUG_MESSAGES
+    std::cout << "annoy::destroy_globals called" << std::endl;
+#endif
+    annoy(0);
 }
 
 void init_globals()
 {
-    threads = new std::vector<thread_data>();
-    std::cout << "threads object created" << std::endl;
+    if (0 != atexit(destroy_globals))
+    {
+        std::cerr << "annoy::destroy_globals not installed" << std::endl;
+        exit(-1);
+    }
+
+#ifdef PRINT_DEBUG_MESSAGES
+    std::cout << "annoy::init_globals called" << std::endl;
+#endif
 }
+
+#undef PRINT_DEBUG_MESSAGES
 
 void worker(thread_parms_ptr parms)
 {
     auto counter = 0;
     while(false == (parms->quit))
     {
-        if(counter++ >= 100)
+        if(0 == (counter++ % 100))
         {
             std::stringstream sstr;
             sstr << "print('Thread " << std::this_thread::get_id()
@@ -37,7 +57,6 @@ void worker(thread_parms_ptr parms)
             auto state = PyGILState_Ensure();
             PyRun_SimpleString(sstr.str().c_str());
             PyGILState_Release(state);
-            counter = 0;
         }
         else
         {
@@ -55,27 +74,41 @@ void annoy(int count)
         PyEval_InitThreads();
     }
 
+#ifdef PRINT_DEBUG_MESSAGES
     std::cout << "checking thread pool for removal" << std::endl;
-    while(count < threads->size())
+#endif
+    while(count < threads.size())
     {
+#ifdef PRINT_DEBUG_MESSAGES
         std::cout << "stopping thread" << std::endl;
-        auto& back = threads->back();
+#endif
+        auto& back = threads.back();
         back.second->quit = true;
         back.first.join();
+#ifdef PRINT_DEBUG_MESSAGES
         std::cout << "removing thread" << std::endl;
-        threads->pop_back();
+#endif
+        threads.pop_back();
     }
 
+#ifdef PRINT_DEBUG_MESSAGES
     std::cout << "checking thread pool for additions" << std::endl;
-    while(count > threads->size())
+#endif
+    while(count > threads.size())
     {
+#ifdef PRINT_DEBUG_MESSAGES
         std::cout << "creating thread" << std::endl;
-        threads->push_back(thread_data{});
+#endif
+        threads.push_back(thread_data{});
+#ifdef PRINT_DEBUG_MESSAGES
         std::cout << "setting thread" << std::endl;
-        auto& back = threads->back();
+#endif
+        auto& back = threads.back();
         back.second = std::make_shared<thread_parms>();
         back.second->quit = false;
+#ifdef PRINT_DEBUG_MESSAGES
         std::cout << "launching thread" << std::endl;
+#endif
         back.first = std::thread(worker, back.second);
     }
 }
